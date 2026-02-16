@@ -1,207 +1,208 @@
-# Render3D - CPU-based 3D Rendering for MakeCode Arcade
+# Render3D - 3D for MakeCode Arcade
 
-A lightweight 3D rendering library for MakeCode Arcade that brings shader-style programming to the platform. Implements CPU-based vertex and fragment shaders with matrix transformations.
+Optimized CPU-based 3D rendering using efficient array-based operations.
 
 ## Features
 
-- **Shader Interface**: Write custom vertex and fragment shaders like THREE.js ShaderMaterial
-- **Matrix Math**: Full 4x4 matrix operations (perspective, lookAt, rotation, translation, scale)
-- **Custom Geometry**: Define meshes with arbitrary vertex attributes
-- **Depth Testing**: Proper Z-buffering for correct rendering
-- **Grayscale Output**: White-to-black gradient (0-15 palette)
-- **Efficient**: Optimized for MakeCode Arcade constraints
+- **Compact** - ~6KB code size
+- **Fast** - Array-based, minimal allocations
+- **Simple** - Direct operations, clear API
+- **Efficient** - Optimized for MakeCode Arcade
 
 ## Quick Start
 
 ```typescript
-// Create renderer
-const renderer = new Render3D.Renderer(160, 120);
+const rend = new Render3D.Renderer(160, 120);
+const cube = Render3D.Geo.cube();
 
-// Create geometry
-const cube = Render3D.Geometry.createCube();
-
-// Define vertex shader
-const vertexShader: Render3D.VertexShader = (attrs, uniforms) => {
-    const pos = new Render3D.Vec4(attrs.position.x, attrs.position.y, attrs.position.z, 1.0);
-    
-    // Transform to clip space
-    let transformed = Render3D.Mat4.multiplyVec4(uniforms.modelMatrix, pos);
-    transformed = Render3D.Mat4.multiplyVec4(uniforms.viewMatrix, transformed);
-    transformed = Render3D.Mat4.multiplyVec4(uniforms.projectionMatrix, transformed);
-    
-    return {
-        position: transformed,
-        normal: attrs.normal
-    };
+let t = 0;
+const uni: Render3D.Uniforms = {
+    model: Render3D.m4identity(),
+    view: Render3D.m4lookAt([2, 2, 2], [0, 0, 0], [0, 1, 0]),
+    proj: Render3D.m4perspective(Math.PI / 3, 160 / 120, 0.1, 100)
 };
 
-// Define fragment shader
-const fragmentShader: Render3D.FragmentShader = (varying, uniforms) => {
-    const normal = varying.normal as Render3D.Vec3;
-    const lightDir = Render3D.Vec3.normalize(new Render3D.Vec3(1, 1, 1));
-    const intensity = Math.max(0, Render3D.Vec3.dot(normal, lightDir));
-    
-    return 15 - Math.floor(intensity * 15); // 15=white, 0=black
+const vert: Render3D.VertShader = (pos, norm, u) => {
+    let p = [pos[0], pos[1], pos[2], 1];
+    p = Render3D.m4mulv(u.model, p);
+    p = Render3D.m4mulv(u.view, p);
+    p = Render3D.m4mulv(u.proj, p);
+    return [p[0], p[1], p[2], p[3], norm[0], norm[1], norm[2]];
 };
 
-// Setup uniforms
-const uniforms = {
-    modelMatrix: Render3D.Mat4.identity(),
-    viewMatrix: Render3D.Mat4.lookAt(
-        new Render3D.Vec3(2, 2, 2),
-        new Render3D.Vec3(0, 0, 0),
-        new Render3D.Vec3(0, 1, 0)
-    ),
-    projectionMatrix: Render3D.Mat4.perspective(Math.PI / 3, 160 / 120, 0.1, 100)
+const frag: Render3D.FragShader = (norm, u) => {
+    const light = Render3D.v3norm([1, 1, 1]);
+    const intensity = Math.max(0, Render3D.v3dot(norm, light));
+    return 15 - Math.floor(intensity * 15);
 };
 
-// Render loop
 game.onUpdate(() => {
-    renderer.clear();
-    renderer.render(cube, vertexShader, fragmentShader, uniforms);
-    renderer.display();
+    t += 0.016;
+
+    uni.view = Render3D.m4lookAt(
+        [Math.cos(t) * 3, 2, Math.sin(t) * 3],
+        [0, 0, 0],
+        [0, 1, 0]
+    );
+
+    uni.model = Render3D.m4mul(Render3D.m4rotY(t), Render3D.m4rotX(t * 0.7));
+
+    rend.clear();
+    rend.render(cube, vert, frag, uni);
+    rend.show();
 });
 ```
 
 ## API Reference
 
-### Renderer
+### Vectors (as arrays)
 
 ```typescript
-class Renderer {
-    constructor(width: number, height: number)
-    clear(): void
-    render(geometry: Geometry, vertShader: VertexShader, fragShader: FragmentShader, uniforms: Uniforms): void
-    display(): void
-    getImage(): Image
-}
+// Create vectors
+const v = [x, y, z];
+const v = Render3D.v3(x, y, z);
+
+// Operations
+Render3D.v3add(a, b)     // Add
+Render3D.v3sub(a, b)     // Subtract
+Render3D.v3scale(v, s)   // Scale
+Render3D.v3dot(a, b)     // Dot product
+Render3D.v3cross(a, b)   // Cross product
+Render3D.v3norm(v)       // Normalize
+```
+
+### Matrices (as number[16])
+
+```typescript
+// Create matrices
+Render3D.m4identity()
+Render3D.m4perspective(fov, aspect, near, far)
+Render3D.m4lookAt(eye, target, up)
+
+// Transforms
+Render3D.m4rotX(angle)
+Render3D.m4rotY(angle)
+Render3D.m4rotZ(angle)
+
+// Operations
+Render3D.m4mul(a, b)      // Multiply matrices
+Render3D.m4mulv(m, v)     // Transform vector [x,y,z,w]
 ```
 
 ### Geometry
 
 ```typescript
-class Geometry {
-    vertices: VertexAttributes[]
-    indices: number[]
-    
-    addVertex(attrs: VertexAttributes): number
-    addTriangle(i0: number, i1: number, i2: number): void
-    static createCube(): Geometry
-}
+const geo = new Render3D.Geo();
+
+// Add vertices
+const idx = geo.addVert(
+    [x, y, z],     // position
+    [nx, ny, nz]   // normal
+);
+
+// Add triangles
+geo.addTri(i0, i1, i2);
+
+// Built-in shapes
+const cube = Render3D.Geo.cube();
 ```
 
 ### Shaders
 
 ```typescript
-interface VertexShader {
-    (attributes: VertexAttributes, uniforms: Uniforms): VertexOutput
-}
+// Vertex shader: transform vertices
+// Input: pos[3], norm[3], uniforms
+// Output: [x,y,z,w, nx,ny,nz]
+const vert: Render3D.VertShader = (pos, norm, u) => {
+    let p = [pos[0], pos[1], pos[2], 1];
+    p = Render3D.m4mulv(u.model, p);
+    p = Render3D.m4mulv(u.view, p);
+    p = Render3D.m4mulv(u.proj, p);
+    return [p[0], p[1], p[2], p[3], norm[0], norm[1], norm[2]];
+};
 
-interface FragmentShader {
-    (varying: VertexOutput, uniforms: Uniforms): number // Returns 0-15
-}
-```
-
-### Math Classes
-
-**Vec3**: 3D vector with `add`, `sub`, `scale`, `dot`, `normalize`, `cross`
-
-**Vec4**: 4D vector for homogeneous coordinates
-
-**Mat4**: 4x4 matrix with operations:
-- `identity()`, `multiply(a, b)`, `multiplyVec4(m, v)`
-- `perspective(fov, aspect, near, far)`
-- `lookAt(eye, target, up)`
-- `translate(x, y, z)`, `scale(x, y, z)`
-- `rotateX(angle)`, `rotateY(angle)`, `rotateZ(angle)`
-
-## Shader Examples
-
-### Diffuse Lighting
-
-```typescript
-const fragmentShader: Render3D.FragmentShader = (varying, uniforms) => {
-    const normal = varying.normal as Render3D.Vec3;
-    const lightDir = Render3D.Vec3.normalize(new Render3D.Vec3(1, 1, 1));
-    const intensity = Math.max(0, Render3D.Vec3.dot(normal, lightDir));
+// Fragment shader: calculate color
+// Input: norm[3], uniforms
+// Output: 0-15 (grayscale)
+const frag: Render3D.FragShader = (norm, u) => {
+    const light = Render3D.v3norm([1, 1, 1]);
+    const intensity = Math.max(0, Render3D.v3dot(norm, light));
     return 15 - Math.floor(intensity * 15);
 };
 ```
 
-### Depth-based
+### Renderer
 
 ```typescript
-const fragmentShader: Render3D.FragmentShader = (varying, uniforms) => {
-    const worldPos = varying.worldPos as Render3D.Vec3;
-    const dist = Math.sqrt(worldPos.x ** 2 + worldPos.y ** 2 + worldPos.z ** 2);
-    const depth = Math.max(0, Math.min(1, dist / 5));
-    return 15 - Math.floor(depth * 15);
+const rend = new Render3D.Renderer(w, h);
+
+rend.clear();                           // Clear buffers
+rend.render(geo, vert, frag, uniforms); // Render geometry
+rend.show();                            // Display to screen
+```
+
+## Shader Examples
+
+### Diffuse Lighting
+```typescript
+const frag: Render3D.FragShader = (norm, u) => {
+    const light = Render3D.v3norm([1, 1, 1]);
+    const intensity = Math.max(0, Render3D.v3dot(norm, light));
+    return 15 - Math.floor(intensity * 15);
 };
 ```
 
-### Normal Visualization
-
+### Depth Fog
 ```typescript
-const fragmentShader: Render3D.FragmentShader = (varying, uniforms) => {
-    const normal = varying.normal as Render3D.Vec3;
-    const shade = (normal.y + 1) * 0.5;
-    return 15 - Math.floor(shade * 15);
+const frag: Render3D.FragShader = (norm, u) => {
+    const len = Math.sqrt(norm[0] ** 2 + norm[1] ** 2 + norm[2] ** 2);
+    const depth = Math.min(1, len / 5);
+    return Math.floor(depth * 15);
+};
+```
+
+### Rim Lighting
+```typescript
+const frag: Render3D.FragShader = (norm, u) => {
+    const viewDir = Render3D.v3norm([0, 0, 1]);
+    const rim = 1 - Math.abs(Render3D.v3dot(norm, viewDir));
+    return Math.floor(rim * 15);
 };
 ```
 
 ## Custom Geometry
 
 ```typescript
-const geo = new Render3D.Geometry();
+const pyramid = new Render3D.Geo();
 
-// Add vertices with custom attributes
-const v0 = geo.addVertex({ 
-    position: new Render3D.Vec3(0, 1, 0),
-    normal: new Render3D.Vec3(0, 1, 0),
-    uv: { x: 0.5, y: 0.0 }  // Custom attribute
-});
+// Apex
+const apex = pyramid.addVert([0, 1, 0], [0, 1, 0]);
 
-const v1 = geo.addVertex({ 
-    position: new Render3D.Vec3(-1, 0, 0),
-    normal: new Render3D.Vec3(-1, 0, 0)
-});
+// Base
+const base = [
+    pyramid.addVert([-0.5, 0, -0.5], [0, -1, 0]),
+    pyramid.addVert([0.5, 0, -0.5], [0, -1, 0]),
+    pyramid.addVert([0.5, 0, 0.5], [0, -1, 0]),
+    pyramid.addVert([-0.5, 0, 0.5], [0, -1, 0])
+];
 
-const v2 = geo.addVertex({ 
-    position: new Render3D.Vec3(1, 0, 0),
-    normal: new Render3D.Vec3(1, 0, 0)
-});
+// Sides
+for (let i = 0; i < 4; i++) {
+    pyramid.addTri(apex, base[i], base[(i + 1) % 4]);
+}
 
-// Add triangle
-geo.addTriangle(v0, v1, v2);
+// Bottom
+pyramid.addTri(base[0], base[2], base[1]);
+pyramid.addTri(base[0], base[3], base[2]);
 ```
 
 ## Performance Tips
 
-1. **Minimize vertices**: Use indexed triangles, avoid duplicate vertices
-2. **Cull back faces**: Check triangle winding in vertex shader
-3. **LOD**: Use simpler geometry for distant objects
-4. **Reduce resolution**: Lower renderer size (120x90) for more FPS
-5. **Simple shaders**: Keep fragment shader calculations minimal
-
-## Architecture
-
-The rendering pipeline:
-
-1. **Vertex Shader**: Transform vertices to clip space, output varyings
-2. **Perspective Division**: Convert clip space to NDC
-3. **Viewport Transform**: Map NDC to screen coordinates
-4. **Rasterization**: Scan triangles, interpolate varyings
-5. **Depth Test**: Compare Z values, update depth buffer
-6. **Fragment Shader**: Calculate per-pixel color (0-15)
-
-## Color Scheme
-
-The library uses a white-to-black gradient (MakeCode Arcade palette 0-15):
-- `15` = White (brightest)
-- `8` = Gray (mid-tone)
-- `0` = Black (darkest)
-
-Fragment shaders return values 0-15 to map to this gradient.
+1. **Lower resolution**: `new Renderer(120, 90)` for more FPS
+2. **Simple shaders**: Minimize math in fragment shader
+3. **Fewer vertices**: Use LOD for complex models
+4. **Reuse arrays**: Don't create new arrays in hot loops
+5. **Cull backfaces**: Check triangle winding
 
 ## License
 

@@ -1,407 +1,338 @@
 /**
- * CPU-based 3D rendering library for MakeCode Arcade
- * Provides shader-like interface with vertex/fragment shaders
+ * Optimized CPU 3D renderer for MakeCode Arcade
+ * Simplified vector ops, minimal allocations
  */
 
 namespace Render3D {
-    
-    // ========== MATH ==========
-    
-    export class Vec3 {
-        constructor(public x: number = 0, public y: number = 0, public z: number = 0) {}
-        
-        static add(a: Vec3, b: Vec3): Vec3 {
-            return new Vec3(a.x + b.x, a.y + b.y, a.z + b.z);
-        }
-        
-        static sub(a: Vec3, b: Vec3): Vec3 {
-            return new Vec3(a.x - b.x, a.y - b.y, a.z - b.z);
-        }
-        
-        static scale(v: Vec3, s: number): Vec3 {
-            return new Vec3(v.x * s, v.y * s, v.z * s);
-        }
-        
-        static dot(a: Vec3, b: Vec3): number {
-            return a.x * b.x + a.y * b.y + a.z * b.z;
-        }
-        
-        static normalize(v: Vec3): Vec3 {
-            const len = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-            return len > 0 ? new Vec3(v.x / len, v.y / len, v.z / len) : new Vec3();
-        }
+
+    // ========== LEAN MATH (using arrays, no class overhead) ==========
+
+    // Vec3 as [x, y, z]
+    export function v3(x: number, y: number, z: number): number[] {
+        return [x, y, z];
     }
-    
-    export class Vec4 {
-        constructor(public x: number = 0, public y: number = 0, public z: number = 0, public w: number = 1) {}
+
+    export function v3add(a: number[], b: number[]): number[] {
+        return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
     }
-    
-    export class Mat4 {
-        // Column-major 4x4 matrix
-        public m: number[] = [
-            1, 0, 0, 0,
-            0, 1, 0, 0,
-            0, 0, 1, 0,
-            0, 0, 0, 1
+
+    export function v3sub(a: number[], b: number[]): number[] {
+        return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    }
+
+    export function v3scale(v: number[], s: number): number[] {
+        return [v[0] * s, v[1] * s, v[2] * s];
+    }
+
+    export function v3dot(a: number[], b: number[]): number {
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    }
+
+    export function v3cross(a: number[], b: number[]): number[] {
+        return [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]
         ];
-        
-        static identity(): Mat4 {
-            return new Mat4();
-        }
-        
-        static multiply(a: Mat4, b: Mat4): Mat4 {
-            const result = new Mat4();
-            for (let i = 0; i < 4; i++) {
-                for (let j = 0; j < 4; j++) {
-                    let sum = 0;
-                    for (let k = 0; k < 4; k++) {
-                        sum += a.m[i * 4 + k] * b.m[k * 4 + j];
-                    }
-                    result.m[i * 4 + j] = sum;
+    }
+
+    export function v3norm(v: number[]): number[] {
+        const len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        return len > 0 ? [v[0] / len, v[1] / len, v[2] / len] : [0, 0, 0];
+    }
+
+    // Mat4 as flat array[16]
+    export function m4identity(): number[] {
+        return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    }
+
+    export function m4mul(a: number[], b: number[]): number[] {
+        const r = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+                for (let k = 0; k < 4; k++) {
+                    r[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
                 }
             }
-            return result;
         }
-        
-        static multiplyVec4(m: Mat4, v: Vec4): Vec4 {
-            return new Vec4(
-                m.m[0] * v.x + m.m[1] * v.y + m.m[2] * v.z + m.m[3] * v.w,
-                m.m[4] * v.x + m.m[5] * v.y + m.m[6] * v.z + m.m[7] * v.w,
-                m.m[8] * v.x + m.m[9] * v.y + m.m[10] * v.z + m.m[11] * v.w,
-                m.m[12] * v.x + m.m[13] * v.y + m.m[14] * v.z + m.m[15] * v.w
-            );
-        }
-        
-        static perspective(fov: number, aspect: number, near: number, far: number): Mat4 {
-            const mat = new Mat4();
-            const f = 1.0 / Math.tan(fov / 2);
-            const nf = 1 / (near - far);
-            
-            mat.m[0] = f / aspect;
-            mat.m[5] = f;
-            mat.m[10] = (far + near) * nf;
-            mat.m[11] = 2 * far * near * nf;
-            mat.m[14] = -1;
-            mat.m[15] = 0;
-            
-            return mat;
-        }
-        
-        static lookAt(eye: Vec3, target: Vec3, up: Vec3): Mat4 {
-            const z = Vec3.normalize(Vec3.sub(eye, target));
-            const x = Vec3.normalize(Vec3.cross(up, z));
-            const y = Vec3.cross(z, x);
-            
-            const mat = new Mat4();
-            mat.m[0] = x.x; mat.m[1] = x.y; mat.m[2] = x.z; mat.m[3] = -Vec3.dot(x, eye);
-            mat.m[4] = y.x; mat.m[5] = y.y; mat.m[6] = y.z; mat.m[7] = -Vec3.dot(y, eye);
-            mat.m[8] = z.x; mat.m[9] = z.y; mat.m[10] = z.z; mat.m[11] = -Vec3.dot(z, eye);
-            mat.m[15] = 1;
-            
-            return mat;
-        }
-        
-        static translate(x: number, y: number, z: number): Mat4 {
-            const mat = new Mat4();
-            mat.m[3] = x;
-            mat.m[7] = y;
-            mat.m[11] = z;
-            return mat;
-        }
-        
-        static rotateX(angle: number): Mat4 {
-            const mat = new Mat4();
-            const c = Math.cos(angle);
-            const s = Math.sin(angle);
-            mat.m[5] = c;
-            mat.m[6] = -s;
-            mat.m[9] = s;
-            mat.m[10] = c;
-            return mat;
-        }
-        
-        static rotateY(angle: number): Mat4 {
-            const mat = new Mat4();
-            const c = Math.cos(angle);
-            const s = Math.sin(angle);
-            mat.m[0] = c;
-            mat.m[2] = s;
-            mat.m[8] = -s;
-            mat.m[10] = c;
-            return mat;
-        }
-        
-        static rotateZ(angle: number): Mat4 {
-            const mat = new Mat4();
-            const c = Math.cos(angle);
-            const s = Math.sin(angle);
-            mat.m[0] = c;
-            mat.m[1] = -s;
-            mat.m[4] = s;
-            mat.m[5] = c;
-            return mat;
-        }
-        
-        static scale(x: number, y: number, z: number): Mat4 {
-            const mat = new Mat4();
-            mat.m[0] = x;
-            mat.m[5] = y;
-            mat.m[10] = z;
-            return mat;
-        }
+        return r;
     }
-    
-    // Add cross product helper
-    namespace Vec3 {
-        export function cross(a: Vec3, b: Vec3): Vec3 {
-            return new Vec3(
-                a.y * b.z - a.z * b.y,
-                a.z * b.x - a.x * b.z,
-                a.x * b.y - a.y * b.x
-            );
-        }
+
+    // Transform [x,y,z,w] by matrix, returns [x,y,z,w]
+    export function m4mulv(m: number[], v: number[]): number[] {
+        return [
+            m[0] * v[0] + m[1] * v[1] + m[2] * v[2] + m[3] * v[3],
+            m[4] * v[0] + m[5] * v[1] + m[6] * v[2] + m[7] * v[3],
+            m[8] * v[0] + m[9] * v[1] + m[10] * v[2] + m[11] * v[3],
+            m[12] * v[0] + m[13] * v[1] + m[14] * v[2] + m[15] * v[3]
+        ];
     }
-    
-    // ========== SHADERS ==========
-    
-    export interface VertexAttributes {
-        position: Vec3;
-        [key: string]: any; // Custom attributes (normal, uv, color, etc.)
+
+    export function m4perspective(fov: number, aspect: number, near: number, far: number): number[] {
+        const f = 1 / Math.tan(fov / 2);
+        const nf = 1 / (near - far);
+        return [
+            f / aspect, 0, 0, 0,
+            0, f, 0, 0,
+            0, 0, (far + near) * nf, 2 * far * near * nf,
+            0, 0, -1, 0
+        ];
     }
-    
-    export interface VertexOutput {
-        position: Vec4; // Clip space position
-        [key: string]: any; // Varying outputs for fragment shader
+
+    export function m4lookAt(eye: number[], target: number[], up: number[]): number[] {
+        const z = v3norm(v3sub(eye, target));
+        const x = v3norm(v3cross(up, z));
+        const y = v3cross(z, x);
+
+        return [
+            x[0], x[1], x[2], -v3dot(x, eye),
+            y[0], y[1], y[2], -v3dot(y, eye),
+            z[0], z[1], z[2], -v3dot(z, eye),
+            0, 0, 0, 1
+        ];
     }
-    
-    export interface Uniforms {
-        modelMatrix?: Mat4;
-        viewMatrix?: Mat4;
-        projectionMatrix?: Mat4;
-        [key: string]: any; // Custom uniforms
+
+    export function m4rotX(a: number): number[] {
+        const c = Math.cos(a), s = Math.sin(a);
+        return [1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0, 0, 0, 0, 1];
     }
-    
-    export interface VertexShader {
-        (attributes: VertexAttributes, uniforms: Uniforms): VertexOutput;
+
+    export function m4rotY(a: number): number[] {
+        const c = Math.cos(a), s = Math.sin(a);
+        return [c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, 0, 0, 0, 1];
     }
-    
-    export interface FragmentShader {
-        (varying: VertexOutput, uniforms: Uniforms): number; // Returns grayscale 0-15
+
+    export function m4rotZ(a: number): number[] {
+        const c = Math.cos(a), s = Math.sin(a);
+        return [c, -s, 0, 0, s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     }
-    
+
     // ========== GEOMETRY ==========
-    
-    export class Geometry {
-        public vertices: VertexAttributes[] = [];
-        public indices: number[] = [];
-        
-        constructor() {}
-        
-        addVertex(attrs: VertexAttributes): number {
-            this.vertices.push(attrs);
-            return this.vertices.length - 1;
+
+    export interface Vertex {
+        p: number[];  // position [x,y,z]
+        n: number[];  // normal [x,y,z]
+    }
+
+    export class Geo {
+        v: Vertex[] = [];  // vertices
+        i: number[] = [];  // indices
+
+        addVert(pos: number[], norm: number[]): number {
+            this.v.push({ p: pos, n: norm });
+            return this.v.length - 1;
         }
-        
-        addTriangle(i0: number, i1: number, i2: number): void {
-            this.indices.push(i0, i1, i2);
+
+        addTri(i0: number, i1: number, i2: number) {
+            this.i.push(i0, i1, i2);
         }
-        
-        static createCube(): Geometry {
-            const geo = new Geometry();
+
+        static cube(): Geo {
+            const g = new Geo();
             const s = 0.5;
-            
-            // Vertices with positions and normals
-            const positions = [
-                [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s], // Front
-                [-s, -s, s], [s, -s, s], [s, s, s], [-s, s, s],     // Back
+
+            // 8 corners
+            const pos = [
+                [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s],
+                [-s, -s, s], [s, -s, s], [s, s, s], [-s, s, s]
             ];
-            
-            for (let pos of positions) {
-                geo.addVertex({
-                    position: new Vec3(pos[0], pos[1], pos[2]),
-                    normal: Vec3.normalize(new Vec3(pos[0], pos[1], pos[2]))
-                });
+
+            for (let p of pos) {
+                g.addVert(p, v3norm(p));
             }
-            
-            // Indices
+
+            // 12 triangles
             const faces = [
-                [0, 1, 2], [0, 2, 3], // Front
-                [5, 4, 7], [5, 7, 6], // Back
-                [4, 0, 3], [4, 3, 7], // Left
-                [1, 5, 6], [1, 6, 2], // Right
-                [3, 2, 6], [3, 6, 7], // Top
-                [4, 5, 1], [4, 1, 0]  // Bottom
+                [0, 1, 2], [0, 2, 3], [5, 4, 7], [5, 7, 6],
+                [4, 0, 3], [4, 3, 7], [1, 5, 6], [1, 6, 2],
+                [3, 2, 6], [3, 6, 7], [4, 5, 1], [4, 1, 0]
             ];
-            
-            for (let face of faces) {
-                geo.addTriangle(face[0], face[1], face[2]);
+
+            for (let f of faces) {
+                g.addTri(f[0], f[1], f[2]);
             }
-            
-            return geo;
+
+            return g;
         }
     }
-    
+
+    // ========== SHADERS (simplified) ==========
+
+    export interface Uniforms {
+        model: number[];
+        view: number[];
+        proj: number[];
+    }
+
+    // Vertex shader: (pos, norm, uniforms) => [clipPos[4], norm[3]]
+    export interface VertShader {
+        (pos: number[], norm: number[], u: Uniforms): number[];
+    }
+
+    // Fragment shader: (norm[3], uniforms) => color (0-15)
+    export interface FragShader {
+        (norm: number[], u: Uniforms): number;
+    }
+
     // ========== RENDERER ==========
-    
+
     export class Renderer {
-        private buffer: Image;
-        private depthBuffer: number[];
-        
-        constructor(public width: number = 160, public height: number = 120) {
-            this.buffer = image.create(width, height);
-            this.depthBuffer = [];
-            for (let i = 0; i < width * height; i++) {
-                this.depthBuffer.push(Infinity);
+        private buf: Image;
+        private depth: number[];
+
+        constructor(public w: number = 160, public h: number = 120) {
+            this.buf = image.create(w, h);
+            this.depth = [];
+            for (let i = 0; i < w * h; i++) {
+                this.depth.push(Infinity);
             }
         }
-        
-        clear(): void {
-            this.buffer.fill(0); // Black background
-            for (let i = 0; i < this.depthBuffer.length; i++) {
-                this.depthBuffer[i] = Infinity;
+
+        clear() {
+            this.buf.fill(0);
+            for (let i = 0; i < this.depth.length; i++) {
+                this.depth[i] = Infinity;
             }
         }
-        
-        render(
-            geometry: Geometry,
-            vertShader: VertexShader,
-            fragShader: FragmentShader,
-            uniforms: Uniforms
-        ): void {
+
+        render(geo: Geo, vs: VertShader, fs: FragShader, u: Uniforms) {
             // Process triangles
-            for (let i = 0; i < geometry.indices.length; i += 3) {
-                const i0 = geometry.indices[i];
-                const i1 = geometry.indices[i + 1];
-                const i2 = geometry.indices[i + 2];
-                
-                // Vertex shader
-                const v0 = vertShader(geometry.vertices[i0], uniforms);
-                const v1 = vertShader(geometry.vertices[i1], uniforms);
-                const v2 = vertShader(geometry.vertices[i2], uniforms);
-                
-                // Perspective division
-                const ndc0 = this.perspectiveDivide(v0.position);
-                const ndc1 = this.perspectiveDivide(v1.position);
-                const ndc2 = this.perspectiveDivide(v2.position);
-                
-                // Viewport transform
-                const p0 = this.toScreen(ndc0);
-                const p1 = this.toScreen(ndc1);
-                const p2 = this.toScreen(ndc2);
-                
-                // Rasterize triangle
-                this.rasterizeTriangle(p0, p1, p2, v0, v1, v2, fragShader, uniforms);
+            for (let i = 0; i < geo.i.length; i += 3) {
+                const i0 = geo.i[i], i1 = geo.i[i + 1], i2 = geo.i[i + 2];
+
+                // Vertex shader (returns [x,y,z,w, nx,ny,nz])
+                const v0 = vs(geo.v[i0].p, geo.v[i0].n, u);
+                const v1 = vs(geo.v[i1].p, geo.v[i1].n, u);
+                const v2 = vs(geo.v[i2].p, geo.v[i2].n, u);
+
+                // Perspective divide + viewport
+                const p0 = this.toScreen(v0);
+                const p1 = this.toScreen(v1);
+                const p2 = this.toScreen(v2);
+
+                // Rasterize
+                this.tri(p0, p1, p2, [v0[4], v0[5], v0[6]], [v1[4], v1[5], v1[6]], [v2[4], v2[5], v2[6]], fs, u);
             }
         }
-        
-        private perspectiveDivide(v: Vec4): Vec3 {
-            if (Math.abs(v.w) < 0.0001) return new Vec3(v.x, v.y, v.z);
-            return new Vec3(v.x / v.w, v.y / v.w, v.z / v.w);
+
+        private toScreen(v: number[]): number[] {
+            // Perspective divide
+            const w = v[3];
+            if (Math.abs(w) < 0.0001) return [0, 0, 0];
+
+            const x = v[0] / w;
+            const y = v[1] / w;
+            const z = v[2] / w;
+
+            return [
+                Math.floor((x + 1) * 0.5 * this.w),
+                Math.floor((1 - y) * 0.5 * this.h),
+                z
+            ];
         }
-        
-        private toScreen(ndc: Vec3): { x: number, y: number, z: number } {
-            return {
-                x: Math.floor((ndc.x + 1) * 0.5 * this.width),
-                y: Math.floor((1 - ndc.y) * 0.5 * this.height),
-                z: ndc.z
-            };
-        }
-        
-        private rasterizeTriangle(
-            p0: { x: number, y: number, z: number },
-            p1: { x: number, y: number, z: number },
-            p2: { x: number, y: number, z: number },
-            v0: VertexOutput,
-            v1: VertexOutput,
-            v2: VertexOutput,
-            fragShader: FragmentShader,
-            uniforms: Uniforms
-        ): void {
+
+        private tri(
+            p0: number[], p1: number[], p2: number[],
+            n0: number[], n1: number[], n2: number[],
+            fs: FragShader, u: Uniforms
+        ) {
             // Bounding box
-            const minX = Math.max(0, Math.floor(Math.min(p0.x, p1.x, p2.x)));
-            const maxX = Math.min(this.width - 1, Math.ceil(Math.max(p0.x, p1.x, p2.x)));
-            const minY = Math.max(0, Math.floor(Math.min(p0.y, p1.y, p2.y)));
-            const maxY = Math.min(this.height - 1, Math.ceil(Math.max(p0.y, p1.y, p2.y)));
-            
-            // Rasterize
+            const minX = Math.max(0, Math.floor(Math.min(p0[0], p1[0], p2[0])));
+            const maxX = Math.min(this.w - 1, Math.ceil(Math.max(p0[0], p1[0], p2[0])));
+            const minY = Math.max(0, Math.floor(Math.min(p0[1], p1[1], p2[1])));
+            const maxY = Math.min(this.h - 1, Math.ceil(Math.max(p0[1], p1[1], p2[1])));
+
+            // Scan triangle
             for (let y = minY; y <= maxY; y++) {
                 for (let x = minX; x <= maxX; x++) {
-                    const bary = this.barycentric(x, y, p0, p1, p2);
-                    
-                    if (bary.u >= 0 && bary.v >= 0 && bary.w >= 0) {
-                        const z = p0.z * bary.u + p1.z * bary.v + p2.z * bary.w;
-                        const idx = y * this.width + x;
-                        
-                        if (z < this.depthBuffer[idx]) {
-                            this.depthBuffer[idx] = z;
-                            
-                            // Interpolate varyings
-                            const varying = this.interpolateVarying(v0, v1, v2, bary);
-                            
+                    const b = this.bary(x, y, p0, p1, p2);
+
+                    if (b[0] >= 0 && b[1] >= 0 && b[2] >= 0) {
+                        const z = p0[2] * b[0] + p1[2] * b[1] + p2[2] * b[2];
+                        const idx = y * this.w + x;
+
+                        if (z < this.depth[idx]) {
+                            this.depth[idx] = z;
+
+                            // Interpolate normal
+                            const n = [
+                                n0[0] * b[0] + n1[0] * b[1] + n2[0] * b[2],
+                                n0[1] * b[0] + n1[1] * b[1] + n2[1] * b[2],
+                                n0[2] * b[0] + n1[2] * b[1] + n2[2] * b[2]
+                            ];
+
                             // Fragment shader
-                            const color = fragShader(varying, uniforms);
-                            this.buffer.setPixel(x, y, Math.max(0, Math.min(15, Math.floor(color))));
+                            const col = fs(n, u);
+                            this.buf.setPixel(x, y, Math.max(0, Math.min(15, Math.floor(col))));
                         }
                     }
                 }
             }
         }
-        
-        private barycentric(
-            x: number, y: number,
-            p0: { x: number, y: number },
-            p1: { x: number, y: number },
-            p2: { x: number, y: number }
-        ): { u: number, v: number, w: number } {
-            const v0x = p1.x - p0.x, v0y = p1.y - p0.y;
-            const v1x = p2.x - p0.x, v1y = p2.y - p0.y;
-            const v2x = x - p0.x, v2y = y - p0.y;
-            
+
+        private bary(x: number, y: number, p0: number[], p1: number[], p2: number[]): number[] {
+            const v0x = p1[0] - p0[0], v0y = p1[1] - p0[1];
+            const v1x = p2[0] - p0[0], v1y = p2[1] - p0[1];
+            const v2x = x - p0[0], v2y = y - p0[1];
+
             const denom = v0x * v1y - v1x * v0y;
-            if (Math.abs(denom) < 0.001) return { u: -1, v: -1, w: -1 };
-            
+            if (Math.abs(denom) < 0.001) return [-1, -1, -1];
+
             const v = (v2x * v1y - v1x * v2y) / denom;
             const w = (v0x * v2y - v2x * v0y) / denom;
             const u = 1 - v - w;
-            
-            return { u, v, w };
+
+            return [u, v, w];
         }
-        
-        private interpolateVarying(
-            v0: VertexOutput,
-            v1: VertexOutput,
-            v2: VertexOutput,
-            bary: { u: number, v: number, w: number }
-        ): VertexOutput {
-            const result: VertexOutput = { position: new Vec4() };
-            
-            for (let key in v0) {
-                if (key === 'position') continue;
-                
-                const val0 = v0[key];
-                const val1 = v1[key];
-                const val2 = v2[key];
-                
-                if (typeof val0 === 'number') {
-                    result[key] = val0 * bary.u + val1 * bary.v + val2 * bary.w;
-                } else if (val0 instanceof Vec3) {
-                    result[key] = new Vec3(
-                        val0.x * bary.u + val1.x * bary.v + val2.x * bary.w,
-                        val0.y * bary.u + val1.y * bary.v + val2.y * bary.w,
-                        val0.z * bary.u + val1.z * bary.v + val2.z * bary.w
-                    );
-                }
-            }
-            
-            return result;
-        }
-        
-        getImage(): Image {
-            return this.buffer;
-        }
-        
-        display(): void {
-            scene.backgroundImage().drawTransparentImage(this.buffer, 0, 0);
+
+        show() {
+            scene.backgroundImage().drawTransparentImage(this.buf, 0, 0);
         }
     }
 }
+
+// ========== DEMO ==========
+
+const rend = new Render3D.Renderer(160, 120);
+const cube = Render3D.Geo.cube();
+
+let t = 0;
+const uni: Render3D.Uniforms = {
+    model: Render3D.m4identity(),
+    view: Render3D.m4identity(),
+    proj: Render3D.m4perspective(Math.PI / 3, 160 / 120, 0.1, 100)
+};
+
+// Simple vertex shader
+const vert: Render3D.VertShader = (pos, norm, u) => {
+    // Transform position
+    let p = [pos[0], pos[1], pos[2], 1];
+    p = Render3D.m4mulv(u.model, p);
+    p = Render3D.m4mulv(u.view, p);
+    p = Render3D.m4mulv(u.proj, p);
+
+    // Return [x,y,z,w, nx,ny,nz]
+    return [p[0], p[1], p[2], p[3], norm[0], norm[1], norm[2]];
+};
+
+// Simple diffuse lighting
+const frag: Render3D.FragShader = (norm, u) => {
+    const light = Render3D.v3norm([1, 1, 1]);
+    const intensity = Math.max(0, Render3D.v3dot(norm, light));
+    return 15 - Math.floor(intensity * 15);
+};
+
+game.onUpdate(() => {
+    t += 0.016;
+
+    // Orbit camera
+    const eye = Render3D.v3(Math.cos(t) * 3, Math.sin(t * 0.5) * 2, Math.sin(t) * 3);
+    uni.view = Render3D.m4lookAt(eye, [0, 0, 0], [0, 1, 0]);
+
+    // Spin cube
+    uni.model = Render3D.m4mul(Render3D.m4rotY(t), Render3D.m4rotX(t * 0.7));
+
+    rend.clear();
+    rend.render(cube, vert, frag, uni);
+    rend.show();
+})

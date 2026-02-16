@@ -1,7 +1,7 @@
 {
     "name": "render3d",
     "version": "1.0.0",
-    "description": "CPU-based 3D rendering library with shader-style programming for MakeCode Arcade",
+    "description": "CPU-based 3D renderer with shader-style programming for MakeCode Arcade",
     "license": "MIT",
     "dependencies": {
         "device": "*"
