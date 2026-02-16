@@ -1,0 +1,21 @@
+{
+    "name": "render3d",
+    "version": "1.0.0",
+    "description": "CPU-based 3D rendering library with shader-style programming for MakeCode Arcade",
+    "license": "MIT",
+    "dependencies": {
+        "device": "*"
+    },
+    "files": [
+        "README.md",
+        "render3d.ts"
+    ],
+    "testFiles": [
+        "test.ts"
+    ],
+    "public": true,
+    "supportedTargets": [
+        "arcade"
+    ],
+    "preferredEditor": "tsprj"
+}
