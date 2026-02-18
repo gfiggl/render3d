@@ -28,11 +28,14 @@ long_line_behaviour=1
 long_line_column=72
 
 [files]
-current_page=3
-FILE_NAME_0=102;TypeScript;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2Frender3d.ts;0;2
+current_page=6
+FILE_NAME_0=1238;TypeScript;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2Frender3d.ts;0;2
 FILE_NAME_1=0;Markdown;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2FREADME.md;0;2
 FILE_NAME_2=0;None;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2Frender3d.geany;0;2
 FILE_NAME_3=854;TypeScript;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2Fexample.ts;0;2
+FILE_NAME_4=0;Markdown;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2Fimport.md;0;2
+FILE_NAME_5=0;None;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2FLICENSE;0;2
+FILE_NAME_6=0;JSON;0;EUTF-8;1;1;0;%2FUsers%2Floic%2Fprojects%2Frender3d%2Fpxt.json;0;2
 
 [VTE]
 last_dir=/Users/loic
