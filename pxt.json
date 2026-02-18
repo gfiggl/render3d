@@ -11,7 +11,7 @@
         "render3d.ts"
     ],
     "testFiles": [
-        "test.ts"
+        "example.ts"
     ],
     "public": true,
     "supportedTargets": [
