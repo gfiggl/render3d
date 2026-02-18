@@ -1,7 +1,8 @@
 // Demo for Render3D library in MakeCode Arcade
 
 const rend = new Render3D.Renderer(160, 120);
-const cube = Render3D.Geo.cube();
+const geometry = Render3D.Geo();
+const cube = geometry.cube();
 
 let t = 0;
 const uni: Render3D.Uniforms = {

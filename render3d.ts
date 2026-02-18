@@ -118,6 +118,11 @@ namespace Render3D {
         v: Vertex[];  // vertices
         i: number[];  // indices
 
+        constructor() {
+						this.v = [];
+						this.i = [];
+				}
+
         addVert(pos: number[], norm: number[]): number {
             this.v.push({ p: pos, n: norm });
             return this.v.length - 1;
