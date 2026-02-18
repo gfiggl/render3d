@@ -115,8 +115,8 @@ namespace Render3D {
     }
 
     export class Geo {
-        v: Vertex[] = [];  // vertices
-        i: number[] = [];  // indices
+        v: Vertex[];  // vertices
+        i: number[];  // indices
 
         addVert(pos: number[], norm: number[]): number {
             this.v.push({ p: pos, n: norm });
