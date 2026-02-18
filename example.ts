@@ -1,5 +1,4 @@
 // Demo for Render3D library in MakeCode Arcade
-export {}
 
 const rend = new Render3D.Renderer(160, 120);
 const cube = Render3D.Geo.cube();
