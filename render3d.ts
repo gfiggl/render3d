@@ -124,7 +124,9 @@ namespace Render3D {
         }
 
         addTri(i0: number, i1: number, i2: number) {
-            this.i.push(i0, i1, i2);
+            this.i.push(i0);
+            this.i.push(i1);
+            this.i.push(i2);
         }
 
         static cube(): Geo {
@@ -237,10 +239,10 @@ namespace Render3D {
             fs: FragShader, u: Uniforms
         ) {
             // Bounding box
-            const minX = Math.max(0, Math.floor(Math.min(p0[0], p1[0], p2[0])));
-            const maxX = Math.min(this.w - 1, Math.ceil(Math.max(p0[0], p1[0], p2[0])));
-            const minY = Math.max(0, Math.floor(Math.min(p0[1], p1[1], p2[1])));
-            const maxY = Math.min(this.h - 1, Math.ceil(Math.max(p0[1], p1[1], p2[1])));
+            const minX = Math.max(0, Math.floor(Math.min(p0[0], Math.min(p1[0], p2[0]))));
+            const maxX = Math.min(this.w - 1, Math.ceil(Math.max(p0[0], Math.max(p1[0], p2[0]))));
+            const minY = Math.max(0, Math.floor(Math.min(p0[1], Math.min(p1[1], p2[1]))));
+            const maxY = Math.min(this.h - 1, Math.ceil(Math.max(p0[1], Math.max(p1[1], p2[1]))));
 
             // Scan triangle
             for (let y = minY; y <= maxY; y++) {
